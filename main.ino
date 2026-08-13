@@ -1,4 +1,3 @@
-
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
@@ -6,76 +5,156 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
-// ===============================
+// =====================================================
 // WiFi Credentials
-// ===============================
-const char* ssid = "joule";
-const char* password = "Jul12345";
+// =====================================================
 
-// ===============================
+const char* ssid = "Your_Wifi_Name";
+const char* password = "Your_Password";
+
+// =====================================================
 // Google Form URL
-// ===============================
-// Example:
-// https://docs.google.com/forms/d/e/XXXXXXXX/formResponse?entry.123456789=
-//
-// Put your Google Form "formResponse" URL here.
-// Make sure the entry ID is for the STATUS question.
-const String form_url =
-  "https://docs.google.com/forms/d/e/1FAIpQLSeJImxu4moiK-RXo0cNG7le8UdYwZIxzWATTcRJ5acl-hZ51A/formResponse?usp=pp_url&entry.957340545=";
+// =====================================================
+// In the link change the viewForm into formResponse
 
-// ===============================
-// Ultrasonic Sensor Pins
-// ===============================
+const String form_url =
+"your_spreadsheet_Link";
+
+// =====================================================
+// ULTRASONIC SENSOR PINS
+// =====================================================
+
 #define TRIG_PIN 5
 #define ECHO_PIN 18
 
-// ===============================
-// Full Bin Threshold
-// ===============================
+// =====================================================
+// FULL BIN THRESHOLD
+// =====================================================
+
 #define FULL_THRESHOLD_CM 5.0
 
-// ===============================
+// =====================================================
 // LCD
-// ===============================
+// =====================================================
+
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-// ===============================
-// Secure WiFi Client
-// ===============================
+// =====================================================
+// SECURE WIFI CLIENT
+// =====================================================
+
 WiFiClientSecure secureClient;
 
-// ===============================
-// Timing
-// ===============================
-unsigned long previousSendTime = 0;
-const unsigned long sendInterval = 5000; // 5 seconds
+// =====================================================
+// HW-870 LINE SENSOR PINS
+// =====================================================
 
+#define LEFT_SENSOR_PIN 34
+#define RIGHT_SENSOR_PIN 35
+
+// =====================================================
+// MOTOR DRIVER PINS
+// L298N
+// =====================================================
+
+// LEFT MOTOR
+#define IN1 25
+#define IN2 26
+
+// RIGHT MOTOR
+#define IN3 27
+#define IN4 14
+
+// =====================================================
+// HW-870 SENSOR LOGIC
+// =====================================================
+// Assuming:
+// LOW  = BLACK
+// HIGH = WHITE
+//
+// If your HW-870 gives HIGH when detecting black,
+// change to:
+//
+// #define BLACK HIGH
+// #define WHITE LOW
+// =====================================================
+
+#define BLACK LOW
+#define WHITE HIGH
+
+// =====================================================
+// TIMING
+// =====================================================
+
+unsigned long previousSendTime = 0;
+
+const unsigned long sendInterval = 5000;
+
+// =====================================================
+// ROBOT STATE
+// =====================================================
+
+bool robotActive = false;
 
 // =====================================================
 // SETUP
 // =====================================================
+
 void setup() {
 
   Serial.begin(115200);
 
-  // Ultrasonic sensor
+  // ===================================================
+  // ULTRASONIC SENSOR
+  // ===================================================
+
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
 
+  // ===================================================
+  // HW-870 LINE SENSORS
+  // ===================================================
+
+  pinMode(LEFT_SENSOR_PIN, INPUT);
+  pinMode(RIGHT_SENSOR_PIN, INPUT);
+
+  // ===================================================
+  // MOTOR DRIVER
+  // ===================================================
+
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+
+  // Make sure robot is stopped
+  stopMotors();
+
+  // ===================================================
   // LCD
+  // ===================================================
+
   lcd.init();
   lcd.backlight();
   lcd.clear();
 
   lcd.setCursor(0, 0);
   lcd.print("Smart Bin");
+
   lcd.setCursor(0, 1);
   lcd.print("Connecting...");
 
-  // ===============================
-  // Connect WiFi
-  // ===============================
+  // ===================================================
+  // CONNECT TO WIFI
+  // ===================================================
+
   WiFi.begin(ssid, password);
+
+  Serial.println();
+  Serial.println("================================");
+  Serial.println("       SMART BIN SYSTEM");
+  Serial.println("================================");
 
   Serial.print("Connecting to WiFi");
 
@@ -87,42 +166,60 @@ void setup() {
 
   Serial.println();
   Serial.println("WiFi Connected!");
+
   Serial.print("IP Address: ");
   Serial.println(WiFi.localIP());
 
   // Skip SSL certificate verification
   secureClient.setInsecure();
 
+  // ===================================================
   // LCD
+  // ===================================================
+
   lcd.clear();
+
   lcd.setCursor(0, 0);
   lcd.print("WiFi Connected");
 
   delay(1500);
 
   lcd.clear();
-}
 
+  // ===================================================
+  // SYSTEM READY
+  // ===================================================
+
+  Serial.println();
+  Serial.println("System Ready!");
+  Serial.println("Robot: DEACTIVATED");
+  Serial.println("================================");
+}
 
 // =====================================================
 // READ DISTANCE
 // =====================================================
+
 float readDistance() {
 
   // Clear trigger
   digitalWrite(TRIG_PIN, LOW);
+
   delayMicroseconds(2);
 
   // Send ultrasonic pulse
   digitalWrite(TRIG_PIN, HIGH);
+
   delayMicroseconds(10);
+
   digitalWrite(TRIG_PIN, LOW);
 
   // Read echo
   long duration = pulseIn(ECHO_PIN, HIGH, 30000);
 
-  // If no echo
+  // No echo received
   if (duration == 0) {
+
     return -1;
   }
 
@@ -132,10 +229,10 @@ float readDistance() {
   return distanceCm;
 }
 
-
 // =====================================================
 // SEND STATUS TO GOOGLE SHEETS
 // =====================================================
+
 void sendStatusToGoogleSheets(String status) {
 
   if (WiFi.status() != WL_CONNECTED) {
@@ -153,7 +250,6 @@ void sendStatusToGoogleSheets(String status) {
   Serial.println();
   Serial.println("Sending to Google Sheets...");
   Serial.println("Status: " + status);
-  Serial.println("URL: " + finalURL);
 
   // Start HTTPS connection
   http.begin(secureClient, finalURL);
@@ -168,6 +264,7 @@ void sendStatusToGoogleSheets(String status) {
     Serial.println(httpCode);
 
     if (httpCode == 200) {
+
       Serial.println("Data sent successfully!");
     }
 
@@ -181,36 +278,152 @@ void sendStatusToGoogleSheets(String status) {
   http.end();
 }
 
+// =====================================================
+// STOP MOTORS
+// =====================================================
+
+void stopMotors() {
+
+  // Left motor
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+
+  // Right motor
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, LOW);
+}
+
+// =====================================================
+// MOVE FORWARD
+// =====================================================
+
+void moveForward() {
+
+  // Left motor forward
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+
+  // Right motor forward
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
+}
+
+// =====================================================
+// TURN LEFT
+// =====================================================
+
+void turnLeft() {
+
+  // Left motor stop
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+
+  // Right motor forward
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+}
+
+// =====================================================
+// TURN RIGHT
+// =====================================================
+
+void turnRight() {
+
+  // Left motor forward
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+
+  // Right motor stop
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, LOW);
+}
+
+// =====================================================
+// LINE FOLLOWING
+// =====================================================
+
+void lineFollow() {
+
+  // Read HW-870 sensors
+  int leftSensor = digitalRead(LEFT_SENSOR_PIN);
+
+  int rightSensor = digitalRead(RIGHT_SENSOR_PIN);
+
+  // ===================================================
+  // PRINT SENSOR VALUES
+  // ===================================================
+
+  Serial.print("Left Sensor: ");
+  Serial.print(leftSensor);
+
+  Serial.print(" | Right Sensor: ");
+  Serial.println(rightSensor);
+
+  // ===================================================
+  // BOTH BLACK
+  // MOVE FORWARD
+  // ===================================================
+
+  if (leftSensor == BLACK && rightSensor == BLACK) {
+
+    moveForward();
+
+    Serial.println("Robot Movement: FORWARD");
+  }
+
+  // ===================================================
+  // LEFT BLACK / RIGHT WHITE
+  // TURN LEFT
+  // ===================================================
+
+  else if (leftSensor == BLACK && rightSensor == WHITE) {
+
+    turnLeft();
+
+    Serial.println("Robot Movement: TURN LEFT");
+  }
+
+  // ===================================================
+  // LEFT WHITE / RIGHT BLACK
+  // TURN RIGHT
+  // ===================================================
+
+  else if (leftSensor == WHITE && rightSensor == BLACK) {
+
+    turnRight();
+
+    Serial.println("Robot Movement: TURN RIGHT");
+  }
+
+  // ===================================================
+  // BOTH WHITE
+  // LINE LOST
+  // ===================================================
+
+  else if (leftSensor == WHITE && rightSensor == WHITE) {
+
+    stopMotors();
+
+    Serial.println("Robot Movement: STOP - LINE LOST");
+  }
+}
 
 // =====================================================
 // LOOP
 // =====================================================
+
 void loop() {
 
-  // ===============================
-  // Read ultrasonic distance
-  // ===============================
+  // ===================================================
+  // READ ULTRASONIC DISTANCE
+  // ===================================================
+
   float distanceCm = readDistance();
 
-  // ===============================
-  // Serial Monitor
-  // ===============================
-  Serial.print("Distance: ");
+  // ===================================================
+  // DETERMINE BIN STATUS
+  // ===================================================
 
-  if (distanceCm < 0) {
-
-    Serial.println("Sensor Error");
-
-  } else {
-
-    Serial.print(distanceCm, 1);
-    Serial.println(" cm");
-  }
-
-
-  // ===============================
-  // Determine bin status
-  // ===============================
   String binStatus;
 
   if (distanceCm > 0 && distanceCm <= FULL_THRESHOLD_CM) {
@@ -222,12 +435,68 @@ void loop() {
     binStatus = "OK";
   }
 
+  // ===================================================
+  // ROBOT ACTIVATION
+  // ===================================================
 
-  // ===============================
-  // LCD Display
-  // ===============================
+  if (binStatus == "FULL") {
+
+    robotActive = true;
+
+  } else {
+
+    robotActive = false;
+
+    // Stop robot if bin is OK
+    stopMotors();
+  }
+
+  // ===================================================
+  // SERIAL MONITOR
+  // ===================================================
+
+  Serial.println();
+  Serial.println("================================");
+  Serial.println("        SMART BIN STATUS");
+  Serial.println("================================");
+
+  // Distance
+  Serial.print("Distance: ");
+
+  if (distanceCm < 0) {
+
+    Serial.println("SENSOR ERROR");
+
+  } else {
+
+    Serial.print(distanceCm, 1);
+    Serial.println(" cm");
+  }
+
+  // Bin status
+  Serial.print("Bin Status: ");
+  Serial.println(binStatus);
+
+  // Robot activation
+  Serial.print("Robot: ");
+
+  if (robotActive) {
+
+    Serial.println("ACTIVATED");
+
+  } else {
+
+    Serial.println("DEACTIVATED");
+  }
+
+  Serial.println("================================");
+
+  // ===================================================
+  // LCD DISPLAY
+  // ===================================================
 
   lcd.setCursor(0, 0);
+
   lcd.print("Dist: ");
 
   if (distanceCm < 0) {
@@ -240,7 +509,6 @@ void loop() {
     lcd.print(" cm     ");
   }
 
-
   lcd.setCursor(0, 1);
 
   if (binStatus == "FULL") {
@@ -252,11 +520,26 @@ void loop() {
     lcd.print("Status: OK     ");
   }
 
+  // ===================================================
+  // ROBOT LINE FOLLOWING
+  // ===================================================
 
-  // ===============================
-  // Send to Google Sheets
-  // Every 5 seconds
-  // ===============================
+  if (robotActive) {
+
+    Serial.println("Line Following: ACTIVE");
+
+    lineFollow();
+
+  } else {
+
+    stopMotors();
+  }
+
+  // ===================================================
+  // SEND TO GOOGLE SHEETS
+  // EVERY 5 SECONDS
+  // ===================================================
+
   if (millis() - previousSendTime >= sendInterval) {
 
     previousSendTime = millis();
@@ -264,7 +547,6 @@ void loop() {
     sendStatusToGoogleSheets(binStatus);
   }
 
-
   // Small delay
-  delay(500);
+  delay(100);
 }
